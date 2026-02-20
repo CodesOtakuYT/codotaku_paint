@@ -70,6 +70,7 @@ const Canvas = struct {
         .color = .white,
         .thickness = 2,
     },
+    is_save_requested: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, strokes_capacity: usize) !Self {
         return .{
@@ -95,6 +96,13 @@ const Canvas = struct {
 
         for (dvui.events()) |e| {
             var ev = e;
+            switch (e.evt) {
+                .key => |key| switch (key.code) {
+                    .s => self.is_save_requested = key.action == .up,
+                    else => {},
+                },
+                else => {},
+            }
             if (!box.matchEvent(&ev)) continue;
             switch (e.evt) {
                 .mouse => |mouse| switch (mouse.action) {
@@ -112,7 +120,35 @@ const Canvas = struct {
             }
         }
 
-        for (self.strokes.items) |stroke| stroke.draw();
-        self.path_builder.build().stroke(self.stroke_options);
+        const rect = dvui.Rect.Physical.cast(box.data().contentRect());
+
+        if (dvui.Picture.start(rect)) |picture| {
+            var pic = picture;
+            defer pic.deinit();
+            {
+                defer pic.stop();
+                box.drawBackground();
+                for (self.strokes.items) |stroke| stroke.draw();
+                self.path_builder.build().stroke(self.stroke_options);
+            }
+            if (self.is_save_requested) {
+                self.is_save_requested = false;
+                const maybe_path = try dvui.native_dialogs.Native.save(self.strokes_arena.child_allocator, .{
+                    .title = "Save drawing",
+                    .path = "drawing.png",
+                    .filters = &.{"*.png"},
+                    .filter_description = "PNG image .png",
+                });
+                if (maybe_path) |path| {
+                    var file = try std.fs.cwd().createFile(path, .{});
+                    defer file.close();
+
+                    var buffer: [1024 * 16]u8 = undefined;
+                    var writer = file.writer(&buffer);
+                    try pic.png(&writer.interface);
+                    std.debug.print("SAVING!\n", .{});
+                }
+            }
+        }
     }
 };
