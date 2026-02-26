@@ -33,6 +33,16 @@ pub fn appDeinit() void {}
 
 pub fn appFrame() !dvui.App.Result {
     try g_canvas.widget();
+    {
+        var tools_window = dvui.floatingWindow(@src(), .{}, .{});
+        defer tools_window.deinit();
+
+        tools_window.dragAreaSet(dvui.windowHeader("Tools", "", null));
+
+        _ = dvui.slider(@src(), .{ .fraction = &g_canvas.stroke_thickness }, .{ .expand = .horizontal });
+
+        _ = dvui.colorPicker(@src(), .{ .hsv = &g_canvas.stroke_color }, .{});
+    }
     return .ok;
 }
 
@@ -66,10 +76,8 @@ const Canvas = struct {
     strokes: std.ArrayList(Stroke),
     path_builder: dvui.Path.Builder,
     is_drawing: bool = false,
-    stroke_options: dvui.Path.StrokeOptions = .{
-        .color = .white,
-        .thickness = 2,
-    },
+    stroke_color: dvui.Color.HSV = .fromColor(.white),
+    stroke_thickness: f32 = 0,
     is_save_requested: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, strokes_capacity: usize) !Self {
@@ -109,7 +117,7 @@ const Canvas = struct {
                     .press => self.is_drawing = true,
                     .release => {
                         self.is_drawing = false;
-                        try self.strokes.append(self.strokes_arena.child_allocator, try .init(self.strokes_arena.allocator(), &self.path_builder, self.stroke_options));
+                        try self.strokes.append(self.strokes_arena.child_allocator, try .init(self.strokes_arena.allocator(), &self.path_builder, .{ .color = self.stroke_color.toColor(), .thickness = std.math.lerp(1.0, 32.0, self.stroke_thickness) }));
                     },
                     .motion => if (self.is_drawing) {
                         self.path_builder.addPoint(mouse.p);
@@ -129,7 +137,7 @@ const Canvas = struct {
                 defer pic.stop();
                 box.drawBackground();
                 for (self.strokes.items) |stroke| stroke.draw();
-                self.path_builder.build().stroke(self.stroke_options);
+                self.path_builder.build().stroke(.{ .color = self.stroke_color.toColor(), .thickness = std.math.lerp(1.0, 32.0, self.stroke_thickness) });
             }
             if (self.is_save_requested) {
                 self.is_save_requested = false;
